@@ -18,8 +18,8 @@ import chisel3.util._
  * Weight loading:
  *   Weight enters from the left and flows through pass_reg (1-cycle delay, frozen during stall).
  *   Lock propagates with 1-cycle delay (frozen during stall).
- *   On lock rising edge, pass_reg is captured into the inactive buffer
- *   one cycle later (using pipelined propagate for buffer selection).
+ *   On lock rising edge, in_weight is captured directly into the inactive buffer
+ *   (in_weight and in_lock arrive at the same cycle — both travel c hops from column 0).
  *
  * Propagate:
  *   Propagate flows left-to-right through PE chain (1-cycle delay per PE, frozen during stall),
@@ -77,17 +77,16 @@ class TwistPE[T <: Data](inputType: T, weightType: T, outputType: T, accType: T)
     pass_reg := io.in_weight
   }
 
-  // Delayed lock capture: capture pass_reg into inactive buffer
-  // one cycle after lock rising edge.
-  // Uses pipelined propagate (prop_delayed) for buffer selection —
-  // this is the propagate value that arrived at the same time as the lock.
-  val do_capture = RegNext(lock_rise && io.in_valid, false.B)
-  val prop_at_capture = RegNext(io.in_propagate)  // 1-cycle delay, aligned with do_capture
-  when(do_capture) {
-    when(prop_at_capture === 0.U) {
-      buffer2 := pass_reg  // prop=0: load inactive buffer2
+  // Immediate lock capture: in_weight and in_lock arrive at the same cycle
+  // (both travel c hops from column 0), so in_weight is already the correct
+  // weight when lock_rise fires. Capture directly — no 1-cycle delay needed.
+  // This avoids a race at PE(0, n-1) where the old delayed capture would
+  // coincide with the first compute cycle.
+  when(lock_rise && io.in_valid) {
+    when(io.in_propagate === 0.U) {
+      buffer2 := io.in_weight  // prop=0: load inactive buffer2
     }.otherwise {
-      buffer1 := pass_reg  // prop=1: load inactive buffer1
+      buffer1 := io.in_weight  // prop=1: load inactive buffer1
     }
   }
 

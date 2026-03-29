@@ -66,6 +66,25 @@ class TwistWSDualOpRocketConfig extends Config(
   new chipyard.config.WithSystemBusWidth(128) ++
   new chipyard.config.AbstractConfig)
 
+// --- 32x32 PPA Comparison Configs ---
+class Baseline32x32WSRocketConfig extends Config(
+  new gemmini.Baseline32x32WSGemminiConfig ++
+  new freechips.rocketchip.rocket.WithNHugeCores(1) ++
+  new chipyard.config.WithSystemBusWidth(128) ++
+  new chipyard.config.AbstractConfig)
+
+class Baseline32x32OSRocketConfig extends Config(
+  new gemmini.Baseline32x32OSGemminiConfig ++
+  new freechips.rocketchip.rocket.WithNHugeCores(1) ++
+  new chipyard.config.WithSystemBusWidth(128) ++
+  new chipyard.config.AbstractConfig)
+
+class Twist32x32WSSingleOpRocketConfig extends Config(
+  new gemmini.Twist32x32WSSingleOpGemminiConfig ++
+  new freechips.rocketchip.rocket.WithNHugeCores(1) ++
+  new chipyard.config.WithSystemBusWidth(128) ++
+  new chipyard.config.AbstractConfig)
+
 class GemminiShuttleConfig extends Config(
   new gemmini.DefaultGemminiConfig ++                            // use Gemmini systolic array GEMM accel
   new shuttle.common.WithNShuttleCores ++

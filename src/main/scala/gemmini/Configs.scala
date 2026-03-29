@@ -295,6 +295,45 @@ object GemminiConfigs {
     meshType = TwistDualOp
   )
 
+  // --- 32x32 configs (for RTL generation / PPA comparison) ---
+
+  // Baseline 32x32 WS-only config
+  val baseline32x32WSConfig = defaultConfig.copy(
+    tileRows = 1, tileColumns = 1,
+    meshRows = 32, meshColumns = 32,
+    dataflow = Dataflow.WS,
+    max_in_flight_mem_reqs = 64,
+    acc_read_full_width = false,
+    ex_read_from_acc = false,
+    ex_write_to_spad = false,
+    hardcode_d_to_garbage_addr = true
+  )
+
+  // Baseline 32x32 OS-only config
+  val baseline32x32OSConfig = defaultConfig.copy(
+    tileRows = 1, tileColumns = 1,
+    meshRows = 32, meshColumns = 32,
+    dataflow = Dataflow.OS,
+    max_in_flight_mem_reqs = 64,
+    acc_read_full_width = false,
+    ex_read_from_acc = false,
+    ex_write_to_spad = false,
+    hardcode_d_to_garbage_addr = true
+  )
+
+  // Twist-WS 32x32 single-op config (A*B only, LP1 fixed)
+  val twist32x32SingleOpConfig = defaultConfig.copy(
+    tileRows = 1, tileColumns = 1,
+    meshRows = 32, meshColumns = 32,
+    dataflow = Dataflow.WS,
+    max_in_flight_mem_reqs = 64,
+    acc_read_full_width = false,
+    ex_read_from_acc = false,
+    ex_write_to_spad = false,
+    hardcode_d_to_garbage_addr = true,
+    meshType = TwistSingleOp
+  )
+
 }
 
 /**
@@ -403,6 +442,53 @@ class TwistWSSingleOpGemminiConfig[T <: Data : Arithmetic, U <: Data, V <: Data]
  */
 class TwistWSDualOpGemminiConfig[T <: Data : Arithmetic, U <: Data, V <: Data](
   gemminiConfig: GemminiArrayConfig[T,U,V] = GemminiConfigs.twistDualOpConfig
+) extends Config((site, here, up) => {
+  case BuildRoCC => up(BuildRoCC) ++ Seq(
+    (p: Parameters) => {
+      implicit val q = p
+      val gemmini = LazyModule(new Gemmini(gemminiConfig))
+      gemmini
+    }
+  )
+})
+
+// --- 32x32 Gemmini Config Mixins ---
+
+/**
+ * Mixin for Baseline 32x32 WS-only accelerator.
+ */
+class Baseline32x32WSGemminiConfig[T <: Data : Arithmetic, U <: Data, V <: Data](
+  gemminiConfig: GemminiArrayConfig[T,U,V] = GemminiConfigs.baseline32x32WSConfig
+) extends Config((site, here, up) => {
+  case BuildRoCC => up(BuildRoCC) ++ Seq(
+    (p: Parameters) => {
+      implicit val q = p
+      val gemmini = LazyModule(new Gemmini(gemminiConfig))
+      gemmini
+    }
+  )
+})
+
+/**
+ * Mixin for Baseline 32x32 OS-only accelerator.
+ */
+class Baseline32x32OSGemminiConfig[T <: Data : Arithmetic, U <: Data, V <: Data](
+  gemminiConfig: GemminiArrayConfig[T,U,V] = GemminiConfigs.baseline32x32OSConfig
+) extends Config((site, here, up) => {
+  case BuildRoCC => up(BuildRoCC) ++ Seq(
+    (p: Parameters) => {
+      implicit val q = p
+      val gemmini = LazyModule(new Gemmini(gemminiConfig))
+      gemmini
+    }
+  )
+})
+
+/**
+ * Mixin for Twist-WS 32x32 single-op (A*B only) systolic array accelerator.
+ */
+class Twist32x32WSSingleOpGemminiConfig[T <: Data : Arithmetic, U <: Data, V <: Data](
+  gemminiConfig: GemminiArrayConfig[T,U,V] = GemminiConfigs.twist32x32SingleOpConfig
 ) extends Config((site, here, up) => {
   case BuildRoCC => up(BuildRoCC) ++ Seq(
     (p: Parameters) => {

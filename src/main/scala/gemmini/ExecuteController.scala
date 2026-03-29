@@ -183,8 +183,8 @@ class ExecuteController[T <: Data, U <: Data, V <: Data](xLen: Int, tagWidth: In
   val cntl = mesh_cntl_signals_q.io.deq.bits
 
   // Instantiate the actual mesh
-  val mesh = Module(new MeshWithDelays(spatialArrayInputType, spatialArrayWeightType, spatialArrayOutputType, accType, mesh_tag, dataflow, tree_reduction, tile_latency, mesh_output_delay,
-    tileRows, tileColumns, meshRows, meshColumns, shifter_banks, shifter_banks))
+  val mesh = Module(new MeshWithDelaysWrapper(spatialArrayInputType, spatialArrayWeightType, spatialArrayOutputType, accType, mesh_tag, dataflow, tree_reduction, tile_latency, mesh_output_delay,
+    tileRows, tileColumns, meshRows, meshColumns, shifter_banks, shifter_banks, meshType = meshType))
 
   mesh.io.a.valid := false.B
   mesh.io.b.valid := false.B
@@ -250,7 +250,10 @@ class ExecuteController[T <: Data, U <: Data, V <: Data](xLen: Int, tagWidth: In
 
   val a_address = a_address_rs1 + a_addr_offset
   val b_address = b_address_rs2 + b_fire_counter
-  val d_address = d_address_rs1 + (block_size.U - 1.U - d_fire_counter)
+  val d_address = meshType match {
+    case TwistSingleOp | TwistDualOp => d_address_rs1 + d_fire_counter
+    case _ => d_address_rs1 + (block_size.U - 1.U - d_fire_counter)
+  }
 
   val dataAbank = a_address.sp_bank()
   val dataBbank = b_address.sp_bank()
@@ -309,7 +312,10 @@ class ExecuteController[T <: Data, U <: Data, V <: Data](xLen: Int, tagWidth: In
   // These variables determine whether or not the row that is currently being read should be completely padded with 0
   val a_row_is_not_all_zeros = a_fire_counter < a_rows
   val b_row_is_not_all_zeros = b_fire_counter < b_rows
-  val d_row_is_not_all_zeros = block_size.U - 1.U - d_fire_counter < d_rows //Todo: d_fire_counter_mulpre?
+  val d_row_is_not_all_zeros = meshType match {
+    case TwistSingleOp | TwistDualOp => d_fire_counter < d_rows
+    case _ => block_size.U - 1.U - d_fire_counter < d_rows //Todo: d_fire_counter_mulpre?
+  }
 
   val im2col_wire = io.im2col.req.ready
 
@@ -436,7 +442,10 @@ class ExecuteController[T <: Data, U <: Data, V <: Data](xLen: Int, tagWidth: In
       io.srams.read(i).req.bits.fromDMA := false.B
       io.srams.read(i).req.bits.addr := MuxCase(a_address_rs1.sp_row() + a_fire_counter,
         Seq(read_b -> (b_address_rs2.sp_row() + b_fire_counter),
-          read_d -> (d_address_rs1.sp_row() + block_size.U - 1.U - d_fire_counter_mulpre)))
+          read_d -> (meshType match {
+            case TwistSingleOp | TwistDualOp => d_address_rs1.sp_row() + d_fire_counter_mulpre
+            case _ => d_address_rs1.sp_row() + block_size.U - 1.U - d_fire_counter_mulpre
+          })))
 
       // TODO this just overrides the previous line. Should we erase the previous line?
       when(im2col_en === false.B) {
@@ -477,7 +486,10 @@ class ExecuteController[T <: Data, U <: Data, V <: Data](xLen: Int, tagWidth: In
       io.acc.read_req(i).bits.fromDMA := false.B
       io.acc.read_req(i).bits.addr := MuxCase(a_address_rs1.acc_row() + a_fire_counter,
         Seq(read_b_from_acc -> (b_address_rs2.acc_row() + b_fire_counter),
-          read_d_from_acc -> (d_address_rs1.acc_row() + block_size.U - 1.U - d_fire_counter)))
+          read_d_from_acc -> (meshType match {
+            case TwistSingleOp | TwistDualOp => d_address_rs1.acc_row() + d_fire_counter
+            case _ => d_address_rs1.acc_row() + block_size.U - 1.U - d_fire_counter
+          })))
 
       // TODO this just overrides the previous line. Should we erase the previous line?
       when(im2col_en === false.B){

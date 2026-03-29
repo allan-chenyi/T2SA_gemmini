@@ -41,6 +41,31 @@ class ReRoCCManyGemminiConfig extends Config(
   new freechips.rocketchip.rocket.WithNHugeCores(4) ++           // 4 rocket cores
   new chipyard.config.AbstractConfig)
 
+// --- 8x8 PPA Comparison Configs ---
+class Baseline8x8WSRocketConfig extends Config(
+  new gemmini.Baseline8x8WSGemminiConfig ++
+  new freechips.rocketchip.rocket.WithNHugeCores(1) ++
+  new chipyard.config.WithSystemBusWidth(128) ++
+  new chipyard.config.AbstractConfig)
+
+class Baseline8x8OSRocketConfig extends Config(
+  new gemmini.Baseline8x8OSGemminiConfig ++
+  new freechips.rocketchip.rocket.WithNHugeCores(1) ++
+  new chipyard.config.WithSystemBusWidth(128) ++
+  new chipyard.config.AbstractConfig)
+
+class TwistWSSingleOpRocketConfig extends Config(
+  new gemmini.TwistWSSingleOpGemminiConfig ++
+  new freechips.rocketchip.rocket.WithNHugeCores(1) ++
+  new chipyard.config.WithSystemBusWidth(128) ++
+  new chipyard.config.AbstractConfig)
+
+class TwistWSDualOpRocketConfig extends Config(
+  new gemmini.TwistWSDualOpGemminiConfig ++
+  new freechips.rocketchip.rocket.WithNHugeCores(1) ++
+  new chipyard.config.WithSystemBusWidth(128) ++
+  new chipyard.config.AbstractConfig)
+
 class GemminiShuttleConfig extends Config(
   new gemmini.DefaultGemminiConfig ++                            // use Gemmini systolic array GEMM accel
   new shuttle.common.WithNShuttleCores ++

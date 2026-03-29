@@ -245,6 +245,56 @@ object GemminiConfigs {
 
   val leanPrintfConfig = defaultConfig.copy(dataflow=Dataflow.WS, max_in_flight_mem_reqs = 64, acc_read_full_width = false, ex_read_from_acc = false, ex_write_to_spad = false, hardcode_d_to_garbage_addr = true, use_firesim_simulation_counters=true)
 
+  // Baseline 8x8 WS-only config (for PPA comparison)
+  val baseline8x8WSConfig = defaultConfig.copy(
+    tileRows = 1, tileColumns = 1,
+    meshRows = 8, meshColumns = 8,
+    dataflow = Dataflow.WS,
+    max_in_flight_mem_reqs = 64,
+    acc_read_full_width = false,
+    ex_read_from_acc = false,
+    ex_write_to_spad = false,
+    hardcode_d_to_garbage_addr = true
+  )
+
+  // Baseline 8x8 OS-only config (for PPA comparison)
+  val baseline8x8OSConfig = defaultConfig.copy(
+    tileRows = 1, tileColumns = 1,
+    meshRows = 8, meshColumns = 8,
+    dataflow = Dataflow.OS,
+    max_in_flight_mem_reqs = 64,
+    acc_read_full_width = false,
+    ex_read_from_acc = false,
+    ex_write_to_spad = false,
+    hardcode_d_to_garbage_addr = true
+  )
+
+  // Twist-WS single-op config (A*B only, LP1 fixed)
+  val twistSingleOpConfig = defaultConfig.copy(
+    tileRows = 1, tileColumns = 1,
+    meshRows = 8, meshColumns = 8,
+    dataflow = Dataflow.WS,
+    max_in_flight_mem_reqs = 64,
+    acc_read_full_width = false,
+    ex_read_from_acc = false,
+    ex_write_to_spad = false,
+    hardcode_d_to_garbage_addr = true,
+    meshType = TwistSingleOp
+  )
+
+  // Twist-WS dual-op config (A*B and A*B^T, runtime LP select)
+  val twistDualOpConfig = defaultConfig.copy(
+    tileRows = 1, tileColumns = 1,
+    meshRows = 8, meshColumns = 8,
+    dataflow = Dataflow.WS,
+    max_in_flight_mem_reqs = 64,
+    acc_read_full_width = false,
+    ex_read_from_acc = false,
+    ex_write_to_spad = false,
+    hardcode_d_to_garbage_addr = true,
+    meshType = TwistDualOp
+  )
+
 }
 
 /**
@@ -293,6 +343,66 @@ class LeanGemminiPrintfConfig[T <: Data : Arithmetic, U <: Data, V <: Data](
 
 class DummyDefaultGemminiConfig[T <: Data : Arithmetic, U <: Data, V <: Data](
   gemminiConfig: GemminiArrayConfig[T,U,V] = GemminiConfigs.dummyConfig
+) extends Config((site, here, up) => {
+  case BuildRoCC => up(BuildRoCC) ++ Seq(
+    (p: Parameters) => {
+      implicit val q = p
+      val gemmini = LazyModule(new Gemmini(gemminiConfig))
+      gemmini
+    }
+  )
+})
+
+/**
+ * Mixin for Baseline 8x8 WS-only accelerator.
+ */
+class Baseline8x8WSGemminiConfig[T <: Data : Arithmetic, U <: Data, V <: Data](
+  gemminiConfig: GemminiArrayConfig[T,U,V] = GemminiConfigs.baseline8x8WSConfig
+) extends Config((site, here, up) => {
+  case BuildRoCC => up(BuildRoCC) ++ Seq(
+    (p: Parameters) => {
+      implicit val q = p
+      val gemmini = LazyModule(new Gemmini(gemminiConfig))
+      gemmini
+    }
+  )
+})
+
+/**
+ * Mixin for Baseline 8x8 OS-only accelerator.
+ */
+class Baseline8x8OSGemminiConfig[T <: Data : Arithmetic, U <: Data, V <: Data](
+  gemminiConfig: GemminiArrayConfig[T,U,V] = GemminiConfigs.baseline8x8OSConfig
+) extends Config((site, here, up) => {
+  case BuildRoCC => up(BuildRoCC) ++ Seq(
+    (p: Parameters) => {
+      implicit val q = p
+      val gemmini = LazyModule(new Gemmini(gemminiConfig))
+      gemmini
+    }
+  )
+})
+
+/**
+ * Mixin for Twist-WS single-op (A*B only) systolic array accelerator.
+ */
+class TwistWSSingleOpGemminiConfig[T <: Data : Arithmetic, U <: Data, V <: Data](
+  gemminiConfig: GemminiArrayConfig[T,U,V] = GemminiConfigs.twistSingleOpConfig
+) extends Config((site, here, up) => {
+  case BuildRoCC => up(BuildRoCC) ++ Seq(
+    (p: Parameters) => {
+      implicit val q = p
+      val gemmini = LazyModule(new Gemmini(gemminiConfig))
+      gemmini
+    }
+  )
+})
+
+/**
+ * Mixin for Twist-WS dual-op (A*B and A*B^T) systolic array accelerator.
+ */
+class TwistWSDualOpGemminiConfig[T <: Data : Arithmetic, U <: Data, V <: Data](
+  gemminiConfig: GemminiArrayConfig[T,U,V] = GemminiConfigs.twistDualOpConfig
 ) extends Config((site, here, up) => {
   case BuildRoCC => up(BuildRoCC) ++ Seq(
     (p: Parameters) => {

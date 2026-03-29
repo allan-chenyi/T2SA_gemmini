@@ -10,6 +10,11 @@ sealed abstract trait GemminiMemCapacity
 case class CapacityInKilobytes(kilobytes: Int) extends GemminiMemCapacity
 case class CapacityInMatrices(matrices: Int) extends GemminiMemCapacity
 
+sealed abstract trait MeshType
+case object StandardMesh extends MeshType
+case object TwistSingleOp extends MeshType   // Twist-WS: A*B only (LP1 fixed)
+case object TwistDualOp extends MeshType     // Twist-WS: A*B and A*B^T (LP selectable)
+
 case class ScaleArguments[T <: Data, U <: Data](scale_func: (T, U) => T, latency: Int, multiplicand_t: U,
                                                 num_scale_units: Int,
                                                 identity: String="0", c_str: String="ROUNDING_RIGHT_SHIFT(x, scale)")
@@ -100,7 +105,9 @@ case class GemminiArrayConfig[T <: Data : Arithmetic, U <: Data, V <: Data](
                                                                              tl_ext_mem_base: BigInt = 0,
                                                                              clock_gate: Boolean = false,
 
-                                                                             headerFileName: String = "gemmini_params.h"
+                                                                             headerFileName: String = "gemmini_params.h",
+
+                                                                             meshType: MeshType = StandardMesh
                                                        ) {
   require(inputType.getWidth == weightType.getWidth)
   val sp_width = meshColumns * tileColumns * inputType.getWidth

@@ -523,6 +523,78 @@ class GemminiModule[T <: Data: Arithmetic, U <: Data, V <: Data]
   }
   assert(pipeline_stall_counter < 10000000.U, "pipeline stall")
 
+  // =========================================================================
+  // Hardware cycle instrumentation v2
+  // Tracks actual hardware work cycles (controllers + reservation station)
+  // Reports on each FLUSH (fence) command: cycles since last fence
+  // =========================================================================
+  val hw_cycle_counter = RegInit(0.U(64.W))
+  hw_cycle_counter := hw_cycle_counter + 1.U
+
+  // Track per-controller busy cycles (accumulated since last fence)
+  val hw_ex_cycles = RegInit(0.U(64.W))
+  val hw_ld_cycles = RegInit(0.U(64.W))
+  val hw_st_cycles = RegInit(0.U(64.W))
+  val hw_any_busy_cycles = RegInit(0.U(64.W))
+  val hw_fence_start = RegInit(0.U(64.W))
+  val hw_flush_count = RegInit(0.U(32.W))
+
+  // Any controller active = real hardware work
+  val any_controller_busy = load_controller.io.busy || store_controller.io.busy || ex_controller.io.busy
+
+  when (ex_controller.io.busy) { hw_ex_cycles := hw_ex_cycles + 1.U }
+  when (load_controller.io.busy) { hw_ld_cycles := hw_ld_cycles + 1.U }
+  when (store_controller.io.busy) { hw_st_cycles := hw_st_cycles + 1.U }
+  when (any_controller_busy) { hw_any_busy_cycles := hw_any_busy_cycles + 1.U }
+
+  // =========================================================================
+  // Module-level start/end tracing (edge-triggered)
+  // =========================================================================
+  val prev_ld_busy = RegInit(false.B)
+  val prev_ex_busy = RegInit(false.B)
+  val prev_st_busy = RegInit(false.B)
+  prev_ld_busy := load_controller.io.busy
+  prev_ex_busy := ex_controller.io.busy
+  prev_st_busy := store_controller.io.busy
+
+  when (load_controller.io.busy && !prev_ld_busy) {
+    printf("GEMMINI_TRACE LD_START cycle=%d\n", hw_cycle_counter)
+  }
+  when (!load_controller.io.busy && prev_ld_busy) {
+    printf("GEMMINI_TRACE LD_END   cycle=%d\n", hw_cycle_counter)
+  }
+  when (ex_controller.io.busy && !prev_ex_busy) {
+    printf("GEMMINI_TRACE EX_START cycle=%d\n", hw_cycle_counter)
+  }
+  when (!ex_controller.io.busy && prev_ex_busy) {
+    printf("GEMMINI_TRACE EX_END   cycle=%d\n", hw_cycle_counter)
+  }
+  when (store_controller.io.busy && !prev_st_busy) {
+    printf("GEMMINI_TRACE ST_START cycle=%d\n", hw_cycle_counter)
+  }
+  when (!store_controller.io.busy && prev_st_busy) {
+    printf("GEMMINI_TRACE ST_END   cycle=%d\n", hw_cycle_counter)
+  }
+
+  // Detect FLUSH command completion: reservation station was busy and becomes idle
+  val rs_busy = reservation_station.io.busy
+  val prev_rs_busy = RegInit(false.B)
+  prev_rs_busy := rs_busy
+
+  // Print on reservation station falling edge (= fence completion)
+  when (prev_rs_busy && !rs_busy) {
+    val wall_cycles = hw_cycle_counter - hw_fence_start
+    hw_flush_count := hw_flush_count + 1.U
+    printf("GEMMINI_HW_CYCLE fence=%d wall=%d ex=%d ld=%d st=%d any_busy=%d cycle=%d\n",
+      hw_flush_count, wall_cycles, hw_ex_cycles, hw_ld_cycles, hw_st_cycles, hw_any_busy_cycles, hw_cycle_counter)
+    // Reset accumulators for next interval
+    hw_ex_cycles := 0.U
+    hw_ld_cycles := 0.U
+    hw_st_cycles := 0.U
+    hw_any_busy_cycles := 0.U
+    hw_fence_start := hw_cycle_counter
+  }
+
   /*
   //=========================================================================
   // Wire up global RoCC signals

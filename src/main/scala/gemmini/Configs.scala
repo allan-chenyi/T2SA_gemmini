@@ -295,13 +295,14 @@ object GemminiConfigs {
     meshType = TwistDualOp
   )
 
-  // --- 32x32 configs (for RTL generation / PPA comparison) ---
+  // =====================================================================
+  // Multi-size configs for RTL generation / PPA comparison
+  // sp_capacity and acc_capacity scale with DIM to keep bank_rows constant
+  // Default (16×16): sp=256KB, acc=64KB → bank_rows=4096, acc_rows=1024
+  // =====================================================================
 
-  // Baseline 32x32 WS-only config
-  val baseline32x32WSConfig = defaultConfig.copy(
-    tileRows = 1, tileColumns = 1,
-    meshRows = 32, meshColumns = 32,
-    dataflow = Dataflow.WS,
+  // Helper: common lean flags for all comparison configs
+  private def leanFlags(cfg: GemminiArrayConfig[SInt, Float, Float]) = cfg.copy(
     max_in_flight_mem_reqs = 64,
     acc_read_full_width = false,
     ex_read_from_acc = false,
@@ -309,30 +310,55 @@ object GemminiConfigs {
     hardcode_d_to_garbage_addr = true
   )
 
-  // Baseline 32x32 OS-only config
-  val baseline32x32OSConfig = defaultConfig.copy(
+  // --- 16x16 (same as default DIM, sp=256KB, acc=64KB) ---
+  val baseline16x16WSConfig = leanFlags(defaultConfig.copy(
     tileRows = 1, tileColumns = 1,
-    meshRows = 32, meshColumns = 32,
-    dataflow = Dataflow.OS,
-    max_in_flight_mem_reqs = 64,
-    acc_read_full_width = false,
-    ex_read_from_acc = false,
-    ex_write_to_spad = false,
-    hardcode_d_to_garbage_addr = true
-  )
+    meshRows = 16, meshColumns = 16,
+    dataflow = Dataflow.WS,
+    sp_capacity = CapacityInKilobytes(256),
+    acc_capacity = CapacityInKilobytes(64)
+  ))
+  val baseline16x16OSConfig = baseline16x16WSConfig.copy(dataflow = Dataflow.OS)
+  val twist16x16SingleOpConfig = baseline16x16WSConfig.copy(meshType = TwistSingleOp)
 
-  // Twist-WS 32x32 single-op config (A*B only, LP1 fixed)
-  val twist32x32SingleOpConfig = defaultConfig.copy(
+  // --- 32x32 (sp=512KB, acc=128KB, dma_buswidth=256 for 1 row/cycle) ---
+  val baseline32x32WSConfig = leanFlags(defaultConfig.copy(
     tileRows = 1, tileColumns = 1,
     meshRows = 32, meshColumns = 32,
     dataflow = Dataflow.WS,
-    max_in_flight_mem_reqs = 64,
-    acc_read_full_width = false,
-    ex_read_from_acc = false,
-    ex_write_to_spad = false,
-    hardcode_d_to_garbage_addr = true,
-    meshType = TwistSingleOp
-  )
+    sp_capacity = CapacityInKilobytes(512),
+    acc_capacity = CapacityInKilobytes(128),
+    dma_buswidth = 256
+  ))
+  val baseline32x32OSConfig = baseline32x32WSConfig.copy(dataflow = Dataflow.OS)
+  val twist32x32SingleOpConfig = baseline32x32WSConfig.copy(meshType = TwistSingleOp)
+
+  // --- 64x64 (sp=1024KB, acc=256KB, dma_buswidth=512 for 1 row/cycle) ---
+  val baseline64x64WSConfig = leanFlags(defaultConfig.copy(
+    tileRows = 1, tileColumns = 1,
+    meshRows = 64, meshColumns = 64,
+    dataflow = Dataflow.WS,
+    sp_capacity = CapacityInKilobytes(1024),
+    acc_capacity = CapacityInKilobytes(256),
+    dma_buswidth = 512
+  ))
+  val baseline64x64OSConfig = baseline64x64WSConfig.copy(dataflow = Dataflow.OS)
+  val twist64x64SingleOpConfig = baseline64x64WSConfig.copy(meshType = TwistSingleOp)
+
+  // --- 128x128 (sp=2048KB, acc=512KB, dma_buswidth=512) ---
+  // dma_buswidth capped at 512: TL cacheBlockBytes=64B=512bit limits max beat size.
+  // dma_buswidth=1024 causes TL TransferSizes to exceed MMIO region limits (max 64B).
+  // With dma_buswidth=512, each scratchpad row (128B) takes 2 DMA beats.
+  val baseline128x128WSConfig = leanFlags(defaultConfig.copy(
+    tileRows = 1, tileColumns = 1,
+    meshRows = 128, meshColumns = 128,
+    dataflow = Dataflow.WS,
+    sp_capacity = CapacityInKilobytes(2048),
+    acc_capacity = CapacityInKilobytes(512),
+    dma_buswidth = 512
+  ))
+  val baseline128x128OSConfig = baseline128x128WSConfig.copy(dataflow = Dataflow.OS)
+  val twist128x128SingleOpConfig = baseline128x128WSConfig.copy(meshType = TwistSingleOp)
 
 }
 
@@ -452,51 +478,77 @@ class TwistWSDualOpGemminiConfig[T <: Data : Arithmetic, U <: Data, V <: Data](
   )
 })
 
-// --- 32x32 Gemmini Config Mixins ---
+// =====================================================================
+// Multi-size Gemmini Config Mixins (16/32/64/128)
+// Each class wraps one GemminiArrayConfig as a Rocket RoCC mixin.
+// =====================================================================
 
-/**
- * Mixin for Baseline 32x32 WS-only accelerator.
- */
+// --- 16x16 ---
+class Baseline16x16WSGemminiConfig[T <: Data : Arithmetic, U <: Data, V <: Data](
+  gemminiConfig: GemminiArrayConfig[T,U,V] = GemminiConfigs.baseline16x16WSConfig
+) extends Config((site, here, up) => {
+  case BuildRoCC => up(BuildRoCC) ++ Seq((p: Parameters) => { implicit val q = p; LazyModule(new Gemmini(gemminiConfig)) })
+})
+class Baseline16x16OSGemminiConfig[T <: Data : Arithmetic, U <: Data, V <: Data](
+  gemminiConfig: GemminiArrayConfig[T,U,V] = GemminiConfigs.baseline16x16OSConfig
+) extends Config((site, here, up) => {
+  case BuildRoCC => up(BuildRoCC) ++ Seq((p: Parameters) => { implicit val q = p; LazyModule(new Gemmini(gemminiConfig)) })
+})
+class Twist16x16WSSingleOpGemminiConfig[T <: Data : Arithmetic, U <: Data, V <: Data](
+  gemminiConfig: GemminiArrayConfig[T,U,V] = GemminiConfigs.twist16x16SingleOpConfig
+) extends Config((site, here, up) => {
+  case BuildRoCC => up(BuildRoCC) ++ Seq((p: Parameters) => { implicit val q = p; LazyModule(new Gemmini(gemminiConfig)) })
+})
+
+// --- 32x32 ---
 class Baseline32x32WSGemminiConfig[T <: Data : Arithmetic, U <: Data, V <: Data](
   gemminiConfig: GemminiArrayConfig[T,U,V] = GemminiConfigs.baseline32x32WSConfig
 ) extends Config((site, here, up) => {
-  case BuildRoCC => up(BuildRoCC) ++ Seq(
-    (p: Parameters) => {
-      implicit val q = p
-      val gemmini = LazyModule(new Gemmini(gemminiConfig))
-      gemmini
-    }
-  )
+  case BuildRoCC => up(BuildRoCC) ++ Seq((p: Parameters) => { implicit val q = p; LazyModule(new Gemmini(gemminiConfig)) })
 })
-
-/**
- * Mixin for Baseline 32x32 OS-only accelerator.
- */
 class Baseline32x32OSGemminiConfig[T <: Data : Arithmetic, U <: Data, V <: Data](
   gemminiConfig: GemminiArrayConfig[T,U,V] = GemminiConfigs.baseline32x32OSConfig
 ) extends Config((site, here, up) => {
-  case BuildRoCC => up(BuildRoCC) ++ Seq(
-    (p: Parameters) => {
-      implicit val q = p
-      val gemmini = LazyModule(new Gemmini(gemminiConfig))
-      gemmini
-    }
-  )
+  case BuildRoCC => up(BuildRoCC) ++ Seq((p: Parameters) => { implicit val q = p; LazyModule(new Gemmini(gemminiConfig)) })
 })
-
-/**
- * Mixin for Twist-WS 32x32 single-op (A*B only) systolic array accelerator.
- */
 class Twist32x32WSSingleOpGemminiConfig[T <: Data : Arithmetic, U <: Data, V <: Data](
   gemminiConfig: GemminiArrayConfig[T,U,V] = GemminiConfigs.twist32x32SingleOpConfig
 ) extends Config((site, here, up) => {
-  case BuildRoCC => up(BuildRoCC) ++ Seq(
-    (p: Parameters) => {
-      implicit val q = p
-      val gemmini = LazyModule(new Gemmini(gemminiConfig))
-      gemmini
-    }
-  )
+  case BuildRoCC => up(BuildRoCC) ++ Seq((p: Parameters) => { implicit val q = p; LazyModule(new Gemmini(gemminiConfig)) })
+})
+
+// --- 64x64 ---
+class Baseline64x64WSGemminiConfig[T <: Data : Arithmetic, U <: Data, V <: Data](
+  gemminiConfig: GemminiArrayConfig[T,U,V] = GemminiConfigs.baseline64x64WSConfig
+) extends Config((site, here, up) => {
+  case BuildRoCC => up(BuildRoCC) ++ Seq((p: Parameters) => { implicit val q = p; LazyModule(new Gemmini(gemminiConfig)) })
+})
+class Baseline64x64OSGemminiConfig[T <: Data : Arithmetic, U <: Data, V <: Data](
+  gemminiConfig: GemminiArrayConfig[T,U,V] = GemminiConfigs.baseline64x64OSConfig
+) extends Config((site, here, up) => {
+  case BuildRoCC => up(BuildRoCC) ++ Seq((p: Parameters) => { implicit val q = p; LazyModule(new Gemmini(gemminiConfig)) })
+})
+class Twist64x64WSSingleOpGemminiConfig[T <: Data : Arithmetic, U <: Data, V <: Data](
+  gemminiConfig: GemminiArrayConfig[T,U,V] = GemminiConfigs.twist64x64SingleOpConfig
+) extends Config((site, here, up) => {
+  case BuildRoCC => up(BuildRoCC) ++ Seq((p: Parameters) => { implicit val q = p; LazyModule(new Gemmini(gemminiConfig)) })
+})
+
+// --- 128x128 ---
+class Baseline128x128WSGemminiConfig[T <: Data : Arithmetic, U <: Data, V <: Data](
+  gemminiConfig: GemminiArrayConfig[T,U,V] = GemminiConfigs.baseline128x128WSConfig
+) extends Config((site, here, up) => {
+  case BuildRoCC => up(BuildRoCC) ++ Seq((p: Parameters) => { implicit val q = p; LazyModule(new Gemmini(gemminiConfig)) })
+})
+class Baseline128x128OSGemminiConfig[T <: Data : Arithmetic, U <: Data, V <: Data](
+  gemminiConfig: GemminiArrayConfig[T,U,V] = GemminiConfigs.baseline128x128OSConfig
+) extends Config((site, here, up) => {
+  case BuildRoCC => up(BuildRoCC) ++ Seq((p: Parameters) => { implicit val q = p; LazyModule(new Gemmini(gemminiConfig)) })
+})
+class Twist128x128WSSingleOpGemminiConfig[T <: Data : Arithmetic, U <: Data, V <: Data](
+  gemminiConfig: GemminiArrayConfig[T,U,V] = GemminiConfigs.twist128x128SingleOpConfig
+) extends Config((site, here, up) => {
+  case BuildRoCC => up(BuildRoCC) ++ Seq((p: Parameters) => { implicit val q = p; LazyModule(new Gemmini(gemminiConfig)) })
 })
 
 // This Gemmini config has both an Int and an FP Gemmini side-by-side, sharing

@@ -73,6 +73,10 @@ class ExecuteController[T <: Data, U <: Data, V <: Data](xLen: Int, tagWidth: In
   val waiting_for_cmd :: compute :: flush :: flushing :: Nil = Enum(4)
   val control_state = RegInit(waiting_for_cmd)
 
+  // Debug cycle counter for printf tracing
+  val dbg_cycle = RegInit(0.U(32.W))
+  dbg_cycle := dbg_cycle + 1.U
+
   // Instruction-related variables
   val current_dataflow = if (dataflow == Dataflow.BOTH) Reg(UInt(1.W)) else dataflow.id.U
 
@@ -230,6 +234,22 @@ class ExecuteController[T <: Data, U <: Data, V <: Data](xLen: Int, tagWidth: In
   val matmul_in_progress = mesh.io.tags_in_progress.map(_.rob_id.valid).reduce(_ || _)
 
   io.busy := cmd.valid(0) || matmul_in_progress
+
+  // Debug: trace EX_BUSY transitions
+  val dbg_prev_busy = RegNext(io.busy, false.B)
+  when (io.busy && !dbg_prev_busy) {
+    printf("EXDEBUG cycle=%d EX_BUSY=1\n", dbg_cycle)
+  }
+  when (!io.busy && dbg_prev_busy) {
+    printf("EXDEBUG cycle=%d EX_BUSY=0\n", dbg_cycle)
+  }
+  val dbg_prev_matmul = RegNext(matmul_in_progress, false.B)
+  when (matmul_in_progress && !dbg_prev_matmul) {
+    printf("EXDEBUG cycle=%d matmul_in_progress=1\n", dbg_cycle)
+  }
+  when (!matmul_in_progress && dbg_prev_matmul) {
+    printf("EXDEBUG cycle=%d matmul_in_progress=0\n", dbg_cycle)
+  }
 
   // SRAM scratchpad
   // Fire counters which resolve same-bank accesses
@@ -606,6 +626,7 @@ class ExecuteController[T <: Data, U <: Data, V <: Data](xLen: Int, tagWidth: In
           start_inputting_d := true.B
 
           control_state := compute
+          printf("EXDEBUG cycle=%d START single_preload total_rows=%d\n", dbg_cycle, total_rows)
         }
 
         // Overlap compute and preload
@@ -619,6 +640,7 @@ class ExecuteController[T <: Data, U <: Data, V <: Data](xLen: Int, tagWidth: In
           start_inputting_d := true.B
 
           control_state := compute
+          printf("EXDEBUG cycle=%d START mul_pre total_rows=%d a_bank=%d d_bank=%d a_garbage=%d d_garbage=%d b_garbage=%d\n", dbg_cycle, total_rows, dataAbank, dataDbank, a_garbage, d_garbage, b_garbage)
         }
 
         // Single mul
@@ -630,6 +652,7 @@ class ExecuteController[T <: Data, U <: Data, V <: Data](xLen: Int, tagWidth: In
           start_inputting_b := !b_should_be_fed_into_transposer
 
           control_state := compute
+          printf("EXDEBUG cycle=%d START single_mul total_rows=%d\n", dbg_cycle, total_rows)
         }
 
         // Flush
@@ -651,6 +674,7 @@ class ExecuteController[T <: Data, U <: Data, V <: Data](xLen: Int, tagWidth: In
         when(about_to_fire_all_rows) {
           cmd.pop := 1.U
           control_state := waiting_for_cmd
+          printf("EXDEBUG cycle=%d DONE single_preload\n", dbg_cycle)
 
           pending_completed_rob_ids(0).valid := cmd.bits(0).rob_id.valid && c_address_rs2.is_garbage()
           pending_completed_rob_ids(0).bits := cmd.bits(0).rob_id.bits
@@ -666,9 +690,15 @@ class ExecuteController[T <: Data, U <: Data, V <: Data](xLen: Int, tagWidth: In
         start_inputting_b := true.B
         start_inputting_d := true.B
 
+        printf("MULPRE_TRACE cycle=%d a_ctr=%d b_ctr=%d d_ctr=%d a_fire=%d b_fire=%d d_fire=%d a_valid=%d b_valid=%d d_valid=%d cntl_rdy=%d a_bank=%d d_bank=%d\n",
+          dbg_cycle, a_fire_counter, b_fire_counter, d_fire_counter,
+          a_fire, b_fire, d_fire, a_valid, b_valid, d_valid, cntl_ready,
+          dataAbank, dataDbank)
+
         when(about_to_fire_all_rows) {
           cmd.pop := 2.U
           control_state := waiting_for_cmd
+          printf("EXDEBUG cycle=%d DONE mul_pre\n", dbg_cycle)
 
           pending_completed_rob_ids(0) := cmd.bits(0).rob_id
           pending_completed_rob_ids(1).valid := cmd.bits(1).rob_id.valid && c_address_rs2.is_garbage()
@@ -687,6 +717,7 @@ class ExecuteController[T <: Data, U <: Data, V <: Data](xLen: Int, tagWidth: In
         when(about_to_fire_all_rows) {
           cmd.pop := 1.U
           control_state := waiting_for_cmd
+          printf("EXDEBUG cycle=%d DONE single_mul\n", dbg_cycle)
           pending_completed_rob_ids(0) := cmd.bits(0).rob_id
         }
       }
@@ -1008,6 +1039,39 @@ class ExecuteController[T <: Data, U <: Data, V <: Data](xLen: Int, tagWidth: In
   when (reset.asBool) {
     // pending_completed_rob_id.valid := false.B
     pending_completed_rob_ids.foreach(_.valid := false.B)
+  }
+
+  // Mesh-level pipeline counter (方案A):
+  // Counts cycles from first mesh.io.req.fire to last mesh.io.resp with tag dequeue.
+  // This measures exactly what the paper formula describes:
+  //   first preload enters mesh → last output exits mesh.
+  val mesh_pipeline_active = RegInit(false.B)
+  val mesh_pipeline_counter = RegInit(0.U(32.W))
+
+  // Start: first req.fire after idle
+  when (!mesh_pipeline_active && mesh.io.req.fire) {
+    mesh_pipeline_active := true.B
+    mesh_pipeline_counter := 0.U
+    printf("MESH_PIPELINE cycle=%d START (first req.fire)\n", dbg_cycle)
+  }
+
+  // Count while active
+  when (mesh_pipeline_active) {
+    mesh_pipeline_counter := mesh_pipeline_counter + 1.U
+  }
+
+  // End: last tag dequeued (matmul_in_progress goes false while no more commands)
+  when (mesh_pipeline_active && !matmul_in_progress && !cmd.valid(0)) {
+    mesh_pipeline_active := false.B
+    printf("MESH_PIPELINE cycle=%d END counter=%d\n", dbg_cycle, mesh_pipeline_counter)
+  }
+
+  // Also trace individual mesh req.fire and resp events
+  when (mesh.io.req.fire) {
+    printf("EXDEBUG cycle=%d mesh.req.fire (new op enters mesh)\n", dbg_cycle)
+  }
+  when (mesh.io.resp.valid && mesh.io.resp.bits.last) {
+    printf("EXDEBUG cycle=%d mesh.resp.last (op output complete)\n", dbg_cycle)
   }
 
   // Performance counter

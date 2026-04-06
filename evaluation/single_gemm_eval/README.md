@@ -1,4 +1,4 @@
-# Single-GEMM Pipeline Cycle Evaluation
+# Single-GEMM Compute-Only Cycle Evaluation
 
 Validates T³'s D−1 cycle saving per GEMM in the Gemmini systolic array
 by sweeping single-GEMM shapes across tile height M and tile count Q.
@@ -6,10 +6,11 @@ by sweeping single-GEMM shapes across tile height M and tile count Q.
 ## What We Measure
 
 The **MESH_PIPELINE** hardware counter in `ExecuteController.scala` measures
-the total pipeline time from the **first `mesh.io.req.fire`** (first preload
-enters the systolic array) to **`!matmul_in_progress && !cmd.valid(0)`**
-(last result exits the mesh and no more pending instructions). This is a
-**single total measurement** per sweep point — not stitched from sub-operations.
+the total compute-only pipeline time from the **first `mesh.io.req.fire`**
+(first preload enters the systolic array) to **`!matmul_in_progress &&
+!cmd.valid(0)`** (last result exits the mesh and no more pending
+instructions). This is a **single total measurement** per sweep point —
+not stitched from sub-operations.
 
 For a Q-tile GEMM (M rows per tile, D×D mesh), the pipeline covers:
 ```
@@ -37,14 +38,13 @@ of M and Q. This is the sole source of speedup in the single-GEMM regime.
 single_gemm_eval/
 ├── README.md
 ├── build_rtl.sh                  # Build Verilator simulators
-├── run_exbusy_debug.sh           # Run sims → extract → plot (one command)
+├── run_compute_only.sh           # Run sims → extract → plot (one command)
 ├── scripts/
-│   ├── extract_exbusy_debug.py   # Parse logs → data/*.csv
+│   ├── extract_exbusy_debug.py   # Parse logs → data/compute_only.csv
 │   └── plot_exbusy.py            # Generate figures
 ├── logs/exbusy_debug/            # Raw simulation logs
 ├── data/
-│   ├── mesh_pipeline.csv         # Pure compute pipeline cycles (primary)
-│   └── exbusy.csv                # EX_BUSY hardware counter cycles
+│   └── compute_only.csv          # Pure compute pipeline cycles
 └── figures/
     └── gemmini_exbusy_combined.{pdf,png}
 ```
@@ -58,7 +58,6 @@ single_gemm_eval/
 
 - **RTL instrumentation**: `generators/gemmini/src/main/scala/gemmini/ExecuteController.scala`
   - `MESH_PIPELINE START/END` — total pipeline cycle counter
-  - `EXDEBUG` — per-operation trace (preload, mul_pre, single_mul)
 
 ## Sweep Parameters
 
@@ -76,22 +75,22 @@ single_gemm_eval/
 bash build_rtl.sh
 
 # Run everything: sim → extract → plot (~15 min)
-bash run_exbusy_debug.sh
+bash run_compute_only.sh
 
 # Re-plot only (skip simulation):
-bash run_exbusy_debug.sh --plot
+bash run_compute_only.sh --plot
 ```
 
 ## Output Figure
 
 **`figures/gemmini_exbusy_combined.pdf`**:
 
-- **(a)** Pipeline cycle bar chart — Baseline vs T³ at M/D=1, varying Q
+- **(a)** Compute-only cycle bar chart — Baseline vs T³ at M/D=1, varying Q
 - **(b)** T³ speedup (%) vs M/D — theory curves + RTL-measured scatter
 
 ## Key Results
 
-Pipeline cycle saving (Baseline − T³) across all M and Q:
+Compute-only cycle saving (Baseline − T³) across all M and Q:
 
 ```
   M\Q      1      2      4      8     16     32     64
@@ -105,40 +104,6 @@ Pipeline cycle saving (Baseline − T³) across all M and Q:
 
 **Saving ≈ D = 32 cycles** for all configurations (theory predicts D−1=31;
 the 1-cycle difference is a consistent measurement offset).
-
-## Note: EXBUSY vs MESH_PIPELINE (6-Cycle Offset)
-
-The `exbusy.csv` data consistently reads **6 cycles higher** than
-`mesh_pipeline.csv` for every (config, M, Q) point. This is expected and
-stems from what each metric measures:
-
-| Metric | Source | Counts when… |
-|--------|--------|-------------|
-| `mesh_pipeline` (pipeline_cycles) | RTL `MESH_PIPELINE START/END` printf | From `mesh.io.req.fire` (first preload enters mesh) to `!matmul_in_progress && !cmd.valid(0)` (mesh drained, no pending cmds) |
-| `exbusy` (cycles) | HW counter `MAIN_EX_CYCLES` + overlap counters | Any cycle where `ex_controller.io.busy` is true |
-
-The key difference is in `ExecuteController.scala:236`:
-```scala
-io.busy := cmd.valid(0) || matmul_in_progress
-```
-
-`io.busy` turns **true** as soon as a command enters the ExecuteController
-queue (`cmd.valid(0)`), which is several cycles **before** the command is
-decoded/dispatched and the first `mesh.io.req.fire` occurs (MESH_PIPELINE
-START). Similarly, after the last compute, `io.busy` may remain true for a
-few cycles while pending ROB IDs are cleared.
-
-The ~6-cycle overhead breaks down as:
-- **~3 cycles**: command decode/dispatch latency (cmd arrives → first req.fire)
-- **~3 cycles**: post-compute ROB cleanup (last drain → busy deasserts)
-
-This offset is **constant** (independent of M and Q), so:
-- **Saving (baseline − twist)** is identical in both CSVs
-- **Speedup %** is slightly diluted in exbusy for small total cycle counts
-
-The plot script (`plot_exbusy.py`) uses `mesh_pipeline.csv` by default for
-this reason — it reflects the pure mesh compute pipeline without the
-fixed RoCC command interface overhead.
 
 ## Important: Spad Bank Assignment
 

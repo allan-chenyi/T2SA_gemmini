@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Plot Single-GEMM Pipeline Cycle Sweep (combined figure).
+Plot Single-GEMM Compute-Only Cycle Sweep (combined figure).
 
 (a) Cycle count bar chart — Baseline vs T^3, vary Q at M/D=1
 (b) T^3 speedup vs M/D — theory curves + measured scatter
@@ -10,7 +10,7 @@ Theory formula (from paper):
     twist    = M + (Q-1)*max(M,D) + 2D - 1
     saving   = D - 1 (constant, independent of M and Q)
 
-Uses mesh_pipeline.csv (pure compute pipeline cycles) for measured data.
+Uses compute_only.csv (pure compute pipeline cycles) for measured data.
 
 Usage:
     python3 scripts/plot_exbusy.py
@@ -29,26 +29,27 @@ FIGDIR  = BASEDIR / "figures"
 
 
 def load_data():
-    """Load mesh_pipeline.csv; fall back to exbusy.csv."""
+    """Load compute_only.csv."""
     data = {}
     D = 32
 
+    p = DATADIR / "compute_only.csv"
+    if p.exists():
+        with open(p) as f:
+            for row in csv.DictReader(f):
+                D = int(row["DIM"])
+                data[(row["config"], int(row["M"]), int(row["Q"]))] = int(row["compute_only"])
+        print("  Loaded compute_only.csv")
+        return data, D
+
+    # Fallback: try mesh_pipeline.csv (old format)
     p = DATADIR / "mesh_pipeline.csv"
     if p.exists():
         with open(p) as f:
             for row in csv.DictReader(f):
                 D = int(row["DIM"])
                 data[(row["config"], int(row["M"]), int(row["Q"]))] = int(row["pipeline_cycles"])
-        print("  Using mesh_pipeline.csv (pure compute pipeline cycles)")
-        return data, D
-
-    p = DATADIR / "exbusy.csv"
-    if p.exists():
-        with open(p) as f:
-            for row in csv.DictReader(f):
-                D = int(row["DIM"])
-                data[(row["config"], int(row["M"]), int(row["Q"]))] = int(row["cycles"])
-        print("  Fallback: using exbusy.csv (EX_BUSY cycles)")
+        print("  Fallback: using mesh_pipeline.csv")
     return data, D
 
 
@@ -103,14 +104,14 @@ def plot_combined(data, D):
             linewidth=0.5, label=r"$T^3$")
 
     ax1.set_xlabel("Tile count  Q", fontsize=FS_LABEL)
-    ax1.set_ylabel("Cycles", fontsize=FS_LABEL)
+    ax1.set_ylabel("Compute-Only Cycles", fontsize=FS_LABEL)
     ax1.set_xticks(x)
     ax1.set_xticklabels(labels, fontsize=FS_TICK)
     ax1.tick_params(axis="y", labelsize=FS_TICK)
     ax1.legend(fontsize=FS_LEGEND, loc="upper left")
     ax1.grid(True, alpha=0.3, axis="y")
 
-    ax1.text(0.5, -0.20, "(a) Cycle Count at M/D=1",
+    ax1.text(0.5, -0.20, "(a) Compute-Only Cycles at M/D=1",
              transform=ax1.transAxes, ha="center", fontsize=FS_CAPTION)
 
     # -- (b) Speedup vs M/D --
@@ -147,7 +148,7 @@ def plot_combined(data, D):
     ax2.axhline(0, color="gray", lw=0.5)
     ax2.axvline(1, color="gray", lw=0.5, ls=":")
 
-    ax2.text(0.5, -0.20, r"(b) Gemmini Single-GEMM $T^3$ Speedup",
+    ax2.text(0.5, -0.20, r"(b) Gemmini Single-GEMM $T^3$ Compute-Only Speedup",
              transform=ax2.transAxes, ha="center", fontsize=FS_CAPTION)
 
     fig.tight_layout(h_pad=5.0)
@@ -161,7 +162,7 @@ def plot_combined(data, D):
 def print_summary(data, D):
     M_vals = sorted({m for (c, m, q) in data if c == "baseline"})
     Q_vals = sorted({q for (c, m, q) in data if c == "baseline"})
-    print("\n  Pipeline cycle saving (baseline - twist):")
+    print("\n  Compute-only cycle saving (baseline - twist):")
     header = "  %6s" % "M\\Q"
     for Q in Q_vals:
         header += " %6d" % Q

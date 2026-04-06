@@ -1,14 +1,12 @@
 #!/usr/bin/env python3
 """
-Extract pipeline cycle data from simulation logs.
+Extract compute-only cycle data from simulation logs.
 
-Parses:
-  - EXBUSY_SWEEP lines (hardware counter data → data/exbusy.csv)
-  - MESH_PIPELINE lines (pure compute pipeline cycles → data/mesh_pipeline.csv)
+Parses MESH_PIPELINE START/END pairs → data/compute_only.csv
 
 The MESH_PIPELINE counter measures from first mesh.io.req.fire to
 !matmul_in_progress — this is the pure compute pipeline time, excluding
-instruction decode and RoCC overhead.
+DMA, instruction decode, and RoCC overhead.
 
 Usage:
     python3 scripts/extract_exbusy_debug.py
@@ -32,7 +30,7 @@ PAT_MESH_PIPELINE = re.compile(
 
 
 def parse_sweep(path):
-    """Parse EXBUSY_SWEEP lines (hardware counter data)."""
+    """Parse EXBUSY_SWEEP lines to get (DIM, M, Q) index."""
     entries = []
     try:
         text = path.read_bytes().decode("utf-8", errors="replace")
@@ -71,50 +69,34 @@ def main():
     logdir = LOGDIR_DEBUG if LOGDIR_DEBUG.exists() else LOGDIR_ORIG
     print("Using logs from: %s" % logdir)
 
-    sweep_rows = []
-    pipeline_rows = []
+    rows = []
 
     for config in ("baseline", "twist"):
         logf = logdir / ("%s.log" % config)
 
         entries = parse_sweep(logf)
-        print("  %s: %d EXBUSY_SWEEP entries" % (config, len(entries)))
-        for dim, m, q, cyc in entries:
-            sweep_rows.append({
-                "config": config, "DIM": dim, "M": m, "Q": q, "cycles": cyc
-            })
-
         pairs = parse_pipeline_pairs(logf)
-        print("  %s: %d MESH_PIPELINE pairs" % (config, len(pairs)))
+        print("  %s: %d sweep entries, %d pipeline pairs" % (
+            config, len(entries), len(pairs)))
 
         if len(pairs) == len(entries):
-            for (dim, m, q, cyc), pcyc in zip(entries, pairs):
-                pipeline_rows.append({
+            for (dim, m, q, _), pcyc in zip(entries, pairs):
+                rows.append({
                     "config": config, "DIM": dim, "M": m, "Q": q,
-                    "pipeline_cycles": pcyc, "exbusy_cycles": cyc,
+                    "compute_only": pcyc,
                 })
         elif pairs:
             print("  WARNING: %d pipeline pairs vs %d sweep entries — skipping"
                   % (len(pairs), len(entries)))
 
-    # Write exbusy.csv
-    if sweep_rows:
-        out = DATADIR / "exbusy.csv"
-        with open(out, "w", newline="") as f:
-            w = csv.DictWriter(f, fieldnames=["config", "DIM", "M", "Q", "cycles"])
-            w.writeheader()
-            w.writerows(sweep_rows)
-        print("  Wrote %d rows → %s" % (len(sweep_rows), out))
-
-    # Write mesh_pipeline.csv
-    if pipeline_rows:
-        out = DATADIR / "mesh_pipeline.csv"
+    if rows:
+        out = DATADIR / "compute_only.csv"
         with open(out, "w", newline="") as f:
             w = csv.DictWriter(f, fieldnames=[
-                "config", "DIM", "M", "Q", "pipeline_cycles", "exbusy_cycles"])
+                "config", "DIM", "M", "Q", "compute_only"])
             w.writeheader()
-            w.writerows(pipeline_rows)
-        print("  Wrote %d rows → %s" % (len(pipeline_rows), out))
+            w.writerows(rows)
+        print("  Wrote %d rows → %s" % (len(rows), out))
 
     print("\nDone. Data in: %s" % DATADIR)
 

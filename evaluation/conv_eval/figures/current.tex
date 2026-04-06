@@ -1,0 +1,55 @@
+\begin{table*}[t]
+\centering
+\caption{Speedup of \pipette{} over Baseline on Gemmini across three
+         timing modes. Only relative improvements are reported; absolute
+         cycle counts are intentionally withheld. Shapes are parameterised
+         in the array dimension~$D$.}
+\label{tab:benchmark_results}
+\small
+\setlength{\tabcolsep}{5pt}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{@{} l c l rrr @{}}
+\toprule
+\textbf{Workload} & \textbf{$D$} & \textbf{Shape}
+ & \shortstack{Warm$^{a}$\\(\%)}
+ & \shortstack{Cold$^{b}$\\(\%)}
+ & \shortstack{General$^{c}$\\(\%)} \\
+\midrule
+LSTM-LM~\cite{sak_long_2014}
+  & 32 & H=64, proj=32, T=32, 160 spad GEMMs (2-tile)
+  & & & \\
+Stacked LSTM~\cite{sak_long_2014}
+  & 32 & L=5, H=64, proj=32, T=16, 400 spad GEMMs (2-tile)
+  & & & \\
+DLRM MLP~\cite{naumov_deep_2019}
+  & 32 & 512\textrightarrow 256\textrightarrow 64\textrightarrow 32, 3 DRAM GEMMs
+  & & & \\
+KWS LSTM~\cite{arik_convolutional_2017}
+  & 32 & L=2, H=128, proj=64, T=16, 160 spad GEMMs (4-tile)
+  & & & \\
+GRU Time-Series~\cite{cho_learning_2014}
+  & 32 & H=1024, proj=512, T=32, 128 DRAM GEMMs (K=32)
+  & & & \\
+BiLSTM-CRF NER~\cite{lample_neural_2016}
+  & 32 & H=96, proj=32, T=16, 160 spad (3-tile) + 1 DRAM
+  & & & \\
+Seq2Seq + Attention~\cite{bahdanau_neural_2016}
+  & 32 & H=1024, proj=512, enc=dec=16, 128+32 DRAM GEMMs
+  & & & \\
+DeepSpeech2~\cite{amodei2016deep}
+  & 32 & H=1760, proj=880, L=3, T=16, 384+3 DRAM GEMMs
+  & & & \\
+\bottomrule
+\end{tabular}
+\par\smallskip
+\begin{minipage}{\linewidth}
+\footnotesize
+$^{a}$~\textbf{Warm}: compute-only cycles, measured after weight preload completes;
+isolates pure hardware execution latency.\quad \\
+$^{b}$~\textbf{Cold}: includes initial weight transfer DRAM\,$\to$\,scratchpad
+(\texttt{mvin}); reflects first-inference latency. Load cycles are identical for
+Baseline and \pipette{}.\quad \\
+$^{c}$~\textbf{General}: full program duration from \texttt{gemmini\_flush} through
+all compute phases.
+\end{minipage}
+\end{table*}

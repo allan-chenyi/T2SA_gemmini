@@ -235,21 +235,13 @@ class ExecuteController[T <: Data, U <: Data, V <: Data](xLen: Int, tagWidth: In
 
   io.busy := cmd.valid(0) || matmul_in_progress
 
-  // Debug: trace EX_BUSY transitions
-  val dbg_prev_busy = RegNext(io.busy, false.B)
-  when (io.busy && !dbg_prev_busy) {
-    printf("EXDEBUG cycle=%d EX_BUSY=1\n", dbg_cycle)
-  }
-  when (!io.busy && dbg_prev_busy) {
-    printf("EXDEBUG cycle=%d EX_BUSY=0\n", dbg_cycle)
-  }
-  val dbg_prev_matmul = RegNext(matmul_in_progress, false.B)
-  when (matmul_in_progress && !dbg_prev_matmul) {
-    printf("EXDEBUG cycle=%d matmul_in_progress=1\n", dbg_cycle)
-  }
-  when (!matmul_in_progress && dbg_prev_matmul) {
-    printf("EXDEBUG cycle=%d matmul_in_progress=0\n", dbg_cycle)
-  }
+  // Debug: trace EX_BUSY transitions (disabled for perf)
+  // val dbg_prev_busy = RegNext(io.busy, false.B)
+  // when (io.busy && !dbg_prev_busy) { printf("EXDEBUG cycle=%d EX_BUSY=1\n", dbg_cycle) }
+  // when (!io.busy && dbg_prev_busy) { printf("EXDEBUG cycle=%d EX_BUSY=0\n", dbg_cycle) }
+  // val dbg_prev_matmul = RegNext(matmul_in_progress, false.B)
+  // when (matmul_in_progress && !dbg_prev_matmul) { printf("EXDEBUG cycle=%d matmul_in_progress=1\n", dbg_cycle) }
+  // when (!matmul_in_progress && dbg_prev_matmul) { printf("EXDEBUG cycle=%d matmul_in_progress=0\n", dbg_cycle) }
 
   // SRAM scratchpad
   // Fire counters which resolve same-bank accesses
@@ -626,7 +618,7 @@ class ExecuteController[T <: Data, U <: Data, V <: Data](xLen: Int, tagWidth: In
           start_inputting_d := true.B
 
           control_state := compute
-          printf("EXDEBUG cycle=%d START single_preload total_rows=%d\n", dbg_cycle, total_rows)
+          // printf("EXDEBUG cycle=%d START single_preload total_rows=%d\n", dbg_cycle, total_rows)
         }
 
         // Overlap compute and preload
@@ -640,7 +632,7 @@ class ExecuteController[T <: Data, U <: Data, V <: Data](xLen: Int, tagWidth: In
           start_inputting_d := true.B
 
           control_state := compute
-          printf("EXDEBUG cycle=%d START mul_pre total_rows=%d a_bank=%d d_bank=%d a_garbage=%d d_garbage=%d b_garbage=%d\n", dbg_cycle, total_rows, dataAbank, dataDbank, a_garbage, d_garbage, b_garbage)
+          // printf("EXDEBUG cycle=%d START mul_pre total_rows=%d a_bank=%d d_bank=%d a_garbage=%d d_garbage=%d b_garbage=%d\n", dbg_cycle, total_rows, dataAbank, dataDbank, a_garbage, d_garbage, b_garbage)
         }
 
         // Single mul
@@ -652,7 +644,7 @@ class ExecuteController[T <: Data, U <: Data, V <: Data](xLen: Int, tagWidth: In
           start_inputting_b := !b_should_be_fed_into_transposer
 
           control_state := compute
-          printf("EXDEBUG cycle=%d START single_mul total_rows=%d\n", dbg_cycle, total_rows)
+          // printf("EXDEBUG cycle=%d START single_mul total_rows=%d\n", dbg_cycle, total_rows)
         }
 
         // Flush
@@ -674,7 +666,7 @@ class ExecuteController[T <: Data, U <: Data, V <: Data](xLen: Int, tagWidth: In
         when(about_to_fire_all_rows) {
           cmd.pop := 1.U
           control_state := waiting_for_cmd
-          printf("EXDEBUG cycle=%d DONE single_preload\n", dbg_cycle)
+          // printf("EXDEBUG cycle=%d DONE single_preload\n", dbg_cycle)
 
           pending_completed_rob_ids(0).valid := cmd.bits(0).rob_id.valid && c_address_rs2.is_garbage()
           pending_completed_rob_ids(0).bits := cmd.bits(0).rob_id.bits
@@ -690,15 +682,15 @@ class ExecuteController[T <: Data, U <: Data, V <: Data](xLen: Int, tagWidth: In
         start_inputting_b := true.B
         start_inputting_d := true.B
 
-        printf("MULPRE_TRACE cycle=%d a_ctr=%d b_ctr=%d d_ctr=%d a_fire=%d b_fire=%d d_fire=%d a_valid=%d b_valid=%d d_valid=%d cntl_rdy=%d a_bank=%d d_bank=%d\n",
-          dbg_cycle, a_fire_counter, b_fire_counter, d_fire_counter,
-          a_fire, b_fire, d_fire, a_valid, b_valid, d_valid, cntl_ready,
-          dataAbank, dataDbank)
+        // printf("MULPRE_TRACE cycle=%d a_ctr=%d b_ctr=%d d_ctr=%d a_fire=%d b_fire=%d d_fire=%d a_valid=%d b_valid=%d d_valid=%d cntl_rdy=%d a_bank=%d d_bank=%d\n",
+        //   dbg_cycle, a_fire_counter, b_fire_counter, d_fire_counter,
+        //   a_fire, b_fire, d_fire, a_valid, b_valid, d_valid, cntl_ready,
+        //   dataAbank, dataDbank)
 
         when(about_to_fire_all_rows) {
           cmd.pop := 2.U
           control_state := waiting_for_cmd
-          printf("EXDEBUG cycle=%d DONE mul_pre\n", dbg_cycle)
+          // printf("EXDEBUG cycle=%d DONE mul_pre\n", dbg_cycle)
 
           pending_completed_rob_ids(0) := cmd.bits(0).rob_id
           pending_completed_rob_ids(1).valid := cmd.bits(1).rob_id.valid && c_address_rs2.is_garbage()
@@ -717,7 +709,7 @@ class ExecuteController[T <: Data, U <: Data, V <: Data](xLen: Int, tagWidth: In
         when(about_to_fire_all_rows) {
           cmd.pop := 1.U
           control_state := waiting_for_cmd
-          printf("EXDEBUG cycle=%d DONE single_mul\n", dbg_cycle)
+          // printf("EXDEBUG cycle=%d DONE single_mul\n", dbg_cycle)
           pending_completed_rob_ids(0) := cmd.bits(0).rob_id
         }
       }
@@ -1066,13 +1058,13 @@ class ExecuteController[T <: Data, U <: Data, V <: Data](xLen: Int, tagWidth: In
     printf("MESH_PIPELINE cycle=%d END counter=%d\n", dbg_cycle, mesh_pipeline_counter)
   }
 
-  // Also trace individual mesh req.fire and resp events
-  when (mesh.io.req.fire) {
-    printf("EXDEBUG cycle=%d mesh.req.fire (new op enters mesh)\n", dbg_cycle)
-  }
-  when (mesh.io.resp.valid && mesh.io.resp.bits.last) {
-    printf("EXDEBUG cycle=%d mesh.resp.last (op output complete)\n", dbg_cycle)
-  }
+  // Also trace individual mesh req.fire and resp events (commented out to reduce Verilator overhead)
+  // when (mesh.io.req.fire) {
+  //   printf("EXDEBUG cycle=%d mesh.req.fire (new op enters mesh)\n", dbg_cycle)
+  // }
+  // when (mesh.io.resp.valid && mesh.io.resp.bits.last) {
+  //   printf("EXDEBUG cycle=%d mesh.resp.last (op output complete)\n", dbg_cycle)
+  // }
 
   // Performance counter
   CounterEventIO.init(io.counter)

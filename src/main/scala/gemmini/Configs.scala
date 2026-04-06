@@ -321,12 +321,15 @@ object GemminiConfigs {
   val baseline16x16OSConfig = baseline16x16WSConfig.copy(dataflow = Dataflow.OS)
   val twist16x16SingleOpConfig = baseline16x16WSConfig.copy(meshType = TwistSingleOp)
 
-  // --- 32x32 (sp=512KB, acc=128KB, dma_buswidth=256 for 1 row/cycle) ---
+  // --- 32x32 (sp=1024KB=4×16x16, acc=128KB=2×16x16, dma_buswidth=256=2×16x16) ---
+  // sp_capacity bumped to 4× the 16x16 baseline (was 512KB=2×) so that the
+  // spad-only working set for every *_spad benchmark still fits after we
+  // double hidden=2·DIM=64 and every tile is 2× taller (32 rows vs 16).
   val baseline32x32WSConfig = leanFlags(defaultConfig.copy(
     tileRows = 1, tileColumns = 1,
     meshRows = 32, meshColumns = 32,
     dataflow = Dataflow.WS,
-    sp_capacity = CapacityInKilobytes(512),
+    sp_capacity = CapacityInKilobytes(1024),
     acc_capacity = CapacityInKilobytes(128),
     dma_buswidth = 256
   ))

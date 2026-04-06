@@ -1,0 +1,398 @@
+
+\section{Evaluation Results}
+\label{sec:prelim}
+
+\subsection{Area, Power, Energy, Scalability Results}
+
+Table~\ref{tab:hw} summarizes the measured hardware results across five arithmetic formats, and Figure~\ref{fig:power-timeline} illustrates the corresponding power timeline across GEMM execution stages. On the evaluated INT8 arrays, the RTL execution window for a \(128 \times 32 \times 32\) GEMM drops from 227 to 196 cycles. The magnitude of the gain depends strongly on the arithmetic format and the clock target. INT4 and INT8 arrays exhibit the largest reductions, with area savings of 8.5--13.1\%, power savings of 8.5--17.8\%, and energy savings of 14.8--23.4\% across the measured INT4/INT8 rows. These results suggest that INT8-class accelerators such as TPU~v1~\cite{jouppi2017} \red{TBD, add more INT8 systolic arrays here} are likely to see meaningful gains in the 8--13\% area and 15--23\% energy range. By contrast, BF16 and FP8 show much smaller improvements, typically below 2\% in area and power and below 5\% in energy, because the PE datapath is dominated by combinational logic; accordingly, BF16 TPU~v3/v4 MXUs~\cite{jouppi2023tpuv4} are projected to see less than 1\% area reduction and around 2\% energy reduction. Higher clock targets also reduce the relative benefit in logic-heavy designs: strict clock constraints inflate non-MAC logic, which diminishes the impact of the fixed savings from removing boundary skew registers.
+
+Array size introduces a second source of variation. For INT8 with INT32 accumulation, the \(16\times16\), \(32\times32\), and \(64\times64\) configurations all preserve the same basic trend, with \pipette{} consistently reducing area, power, and energy while remaining within the same order of magnitude of savings. The physical layouts in Figure~\ref{fig:layout} confirm that this construction scales cleanly as \(D\) increases: the placement permutation preserves local connectivity, so the twisted mesh remains timing-friendly even for larger arrays.
+
+Figure~\ref{fig:composite-pea} shows the combined area--power efficiency of \pipette{}. INT8 at 500\,MHz achieves the largest improvement at +38\%, while the corrected INT8 \(64\times64\) 1\,GHz case still reaches +33\%. INT4 configurations reach up to +31\%, INT16 reaches +24\%, and even FP8 shows a modest +3\% gain. These results indicate that \pipette{} delivers a multiplicative improvement across the hardware cost surface rather than a benefit confined to a single metric.
+
+
+\begin{figure}[tp!]
+  \centering
+  \begin{subfigure}[t]{0.32\linewidth}
+    \centering
+    \includegraphics[width=\linewidth]{figures/8x8.png}
+    \caption{8$\times$8 PEs (216$\times$216 $um^2$) }
+    \label{fig:8x8 layout}
+  \end{subfigure}
+  \hfill
+  \begin{subfigure}[t]{0.32\linewidth}
+    \centering
+    \includegraphics[width=\linewidth]{figures/16x16.png}
+    \caption{16$\times$16 (429$\times$429 $um^2$)}
+    \label{fig:16x16 layout}
+  \end{subfigure}
+  \hfill
+  \begin{subfigure}[t]{0.32\linewidth}
+    \centering
+    \includegraphics[width=\linewidth]{figures/32x32.png}
+    \caption{32$\times$32 (853$\times$853 $um^2$)}
+    \label{fig:32x32 layout}
+  \end{subfigure}
+  \caption{\pipette{} layout for INT8 with INT32 accumulation at 1\,GHz. Each colored region corresponds to one PE.}
+  \label{fig:layout}
+\end{figure}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{figures/power_timeline_d32.pdf}
+  \caption{Per-cycle power profile for a $128 \times 32 \times 32$ GEMM on
+  32$\times$32 INT8 arrays (TSMC N28, 0.9~V nominal, 1~GHz).}
+  \Description{Line chart comparing per-cycle total power for baseline
+  (227 cycles) and $T^3$ (196 cycles). Both rise to a high compute plateau;
+  the baseline reaches about 823 milliwatts while $T^3$ reaches about 676
+  milliwatts before draining earlier.}
+  \label{fig:power-timeline}
+\end{figure}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{figures/composite_pea.pdf}
+  \caption{\pipette{} combined area--power efficiency improvement
+  over baseline SA, measured as
+  (TOPS/W)$\times$(TOPS/mm$^2$)~\cite{sze2020evaluate}.}
+  \Description{Bar chart showing combined area--power efficiency
+  improvement across all Table 1 rows. INT8 500 MHz and the corrected
+  INT8 32x32 1 GHz row are both near +38\%, the INT8 64x64 1 GHz row
+  reaches about +33\%, INT4 peaks around +31\%, and BF16 is near +1\%.}
+  \label{fig:composite-pea}
+\end{figure}
+
+
+
+
+\subsection{Gemmini Evaluation Results}
+\subsubsection{Single GEMM Evaluation}
+
+The Gemmini single-GEMM measurements are overlaid directly on the
+analytical model in Figure~\ref{fig:t3-delta-trends}. Across all tested
+tile counts ($Q{=}1$--$64$) and tile heights ($M/D{=}1/32$--$32$), the measured Gemmini RTL cycle counts closely track the theoretical predictions for both utilization increase and speedup, confirming the $D-1$ cycle savings which align in Figure~\ref{fig:t3-delta-trends}
+
+
+\subsubsection{Edge Model Evaluation}
+
+The same question also arises in recurrent inference, where Gemmini accelerates
+the matrix multiplications but gate nonlinearities and elementwise updates
+separate adjacent GEMMs. An LSTM cell-step study therefore provides a useful
+complement to the decode-layer measurements. The key outputs are GEMM-only
+latency, full cell-step latency, and the fraction of the array-level $D{-}1$
+saving that remains visible once the surrounding recurrent-cell work is
+included.
+
+The three LSTM-based workloads show 7--11\% speedup, consistent with
+the analytical model. Each LSTM cell step executes five scratchpad-resident
+GEMMs (four gate matrices plus one projection), and gate nonlinearities
+prevent the hardware from fusing adjacent GEMMs into a single tiled
+operation. This means each GEMM independently saves $D{-}1$ drain cycles.
+KWS LSTM~\cite{arik_convolutional_2017} on a $16{\times}16$ array executes
+$5 \times 16 \times 2 = 160$ GEMMs across two layers and 16 timesteps;
+the predicted saving of $160 \times 15 = 2400$ cycles closely matches the
+measured 2560-cycle reduction (10.87\% of the 23\,558-cycle baseline).
+LSTM-LM~\cite{sak_long_2014} at $D{=}32$ follows the same pattern:
+160~GEMMs $\times$ 31 $=$ 4960 predicted versus 5120 measured (8.28\%).
+BiLSTM-CRF NER~\cite{lample_neural_2016} achieves 7.65\%, with the
+bidirectional structure doubling the GEMM count per timestep.
+
+DLRM MLP~\cite{naumov_deep_2019} shows only 0.28\% speedup because its
+three fully-connected layers ($512{\to}256{\to}64{\to}32$) are heavily
+tiled at $D{=}32$: the first layer alone requires $K{=}16$, $J{=}8$ tiles,
+producing 128~tile operations per GEMM. With only three GEMMs contributing
+$3 \times 31 = 93$ saved cycles against a 24\,661-cycle baseline,
+the fixed saving is almost entirely amortized.
+
+
+
+%\begin{figure}[t]
+%  \centering
+%  \fbox{\parbox[c][1.45in][c]{0.93\linewidth}{\centering
+%  Gemmini LSTM cell-step latency figure.\\[2pt]
+%  GEMM-only and full cell-step latency across representative hidden sizes and
+%  batch settings for matched baseline and \pipette{} configurations.}}
+%  \caption{Gemmini LSTM cell-step latency across representative recurrent sizes.}
+%  \Description{Reserved space for a Gemmini LSTM cell-step latency figure.}
+%  \label{fig:gemmini-lstm}
+%\end{figure}
+% Required packages in preamble:
+%   \usepackage{booktabs}
+%   \usepackage{multirow}
+%   \usepackage{makecell}
+%   \usepackage{threeparttable}
+%   \usepackage{tabularx}
+\begin{table}[ht]
+\centering
+\caption{Speedup of \pipette{} over Baseline on Gemmini edge workloads.}
+\label{tab:benchmark_results}
+\setlength{\tabcolsep}{5pt}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{@{} l l r @{}}
+\toprule
+\textbf{Workload} & \textbf{Shape} & \shortstack{Speedup} \\
+\midrule
+\multicolumn{3}{@{}l}{\emph{$D{=}16$}} \\
+KWS LSTM~\cite{arik_convolutional_2017} & L=2, H=32, proj=16, T=16 & 10.87\% \\
+\midrule
+\multicolumn{3}{@{}l}{\emph{$D{=}32$}} \\
+LSTM-LM~\cite{sak_long_2014} & H=128, proj=32, T=32 & 8.28\% \\
+BiLSTM-CRF NER~\cite{lample_neural_2016, sak_long_2014} & H=96, proj=32, T=16 & 7.65\% \\
+DLRM MLP~\cite{naumov_deep_2019} & 512\textrightarrow 256\textrightarrow 64\textrightarrow 32 & 0.28\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+
+\begin{table}[t]
+\centering
+\caption{Speedup of \pipette{} over Baseline on convolution and multi-layer CNN workloads.}
+\label{tab:conv_cnn_results}
+\setlength{\tabcolsep}{1pt}
+\renewcommand{\arraystretch}{1}
+\begin{tabular}{@{} l l r @{}}
+\toprule
+\textbf{Workload} & \textbf{Shape} & \shortstack{Speedup} \\
+\midrule
+\multicolumn{3}{@{}l}{\emph{$D{=}32$}} \\
+LeNet-5~\cite{lecun_gradient-based_1998} & FC $120{\to}84{\to}10$, 8 passes & 7.08\% \\
+RoshamboNet~\cite{aimar_nullhop_2019} & 5 conv layers, $1{\to}16{\to} \cdots {\to}128$ & 3.14\% \\
+MobileNetV1~\cite{howard_mobilenets_nodate} & 7 pointwise $1{\times}1$ layers, $32{\to}512$ & 0.48\% \\
+\midrule
+\multicolumn{3}{@{}l}{\emph{$D{=}64$}} \\
+ResNet Bottleneck~\cite{he2016resnet} & 8 blocks, $128{\to}32{\to}128$ & 10.21\% \\
+RoshamboNet L5~\cite{aimar_nullhop_2019} & $1{\times}1$ conv, $128{\to}128$, 16 iters & 9.96\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsubsection{Convolution and CNN Evaluation}
+
+We extend the evaluation to multi-layer convolutional neural networks,
+where each layer's im2col-transformed convolution maps to a single GEMM
+and layers execute sequentially through the systolic array.
+Table~\ref{tab:conv_cnn_results} reports the results across five
+workloads at two array sizes.
+
+\begin{table}[t]
+\centering
+\caption{Warm-compute speedup of \pipette{} over Baseline on convolution and multi-layer CNN workloads.}
+\label{tab:conv_cnn_results}
+\setlength{\tabcolsep}{1pt}
+\renewcommand{\arraystretch}{1}
+\begin{tabular}{@{} l l r @{}}
+\toprule
+\textbf{Workload} & \textbf{Shape} & \shortstack{Speedup} \\
+\midrule
+\multicolumn{3}{@{}l}{\emph{$D{=}32$}} \\
+LeNet-5~\cite{lecun_gradient-based_1998} & FC $120{\to}84{\to}10$, 8 passes & 7.08\% \\
+RoshamboNet~\cite{aimar_nullhop_2019} & 5 conv layers, $1{\to}16{\to} \cdots {\to}128$ & 3.14\% \\
+MobileNetV1~\cite{howard_mobilenets_nodate} & 7 pointwise $1{\times}1$ layers, $32{\to}512$ & 0.48\% \\
+\midrule
+\multicolumn{3}{@{}l}{\emph{$D{=}64$}} \\
+ResNet Bottleneck~\cite{he2016resnet} & 8 blocks, $128{\to}32{\to}128$ & 10.21\% \\
+RoshamboNet L5~\cite{aimar_nullhop_2019} & $1{\times}1$ conv, $128{\to}128$, 16 iters & 9.96\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The $D{=}64$ workloads show the largest gains. ResNet
+Bottleneck~\cite{he2016resnet} executes 8~blocks of two pointwise
+convolutions each ($128{\to}32$ reduce and $32{\to}128$ expand), yielding
+16~GEMMs with tile counts of $K{=}1$--$4$ per dimension. The predicted
+saving of $16 \times 63 = 1008$ cycles matches the measured 1024-cycle
+reduction (10.21\% of the 10\,028-cycle baseline). RoshamboNet
+L5~\cite{aimar_nullhop_2019} repeats a $128{\to}128$ pointwise
+convolution 16~times with $K{=}2$, $J{=}2$ tiles at $D{=}64$, achieving
+9.96\% speedup with similarly close agreement to the $D{-}1$ model.
+
+At $D{=}32$, the results illustrate how tiling intensity governs the
+visible benefit. LeNet-5~\cite{lecun_gradient-based_1998} runs 8~passes
+of its FC layers ($120{\to}84{\to}10$), producing 16~GEMMs with small
+tile counts ($K{\leq}4$, $J{\leq}3$). The 512-cycle measured saving
+(7.08\%) closely tracks the predicted $16 \times 31 = 496$ cycles.
+RoshamboNet's full 5-layer pipeline achieves 3.14\%, limited by only
+5~GEMMs total, though later layers (L4: $K{=}18$, $J{=}4$) are also
+more heavily tiled. MobileNetV1~\cite{howard_mobilenets_nodate} shows
+just 0.48\%: while it executes 11~GEMMs (7~pointwise layers, pw7 repeated
+$5{\times}$), the later layers are heavily tiled ($K{=}16$, $J{=}16$ for
+pw7), and the total warm-compute time of 101\,849~cycles is dominated by
+these large tile operations, reducing the relative impact of the
+$11 \times 31 = 341$ saved drain cycles.
+
+
+
+
+
+\subsection{COCOSSim TPU-Scale Workload Evaluation Results}
+To check whether the same latency mechanism remains visible at
+TPU-class scale, where the array is larger and real workload blocks are
+much more heavily tiled. We use COCOSSim with two proxy configurations
+matched to published systolic arrays: a $256{\times}256$ proxy (matching both TPU~v1 and TPU~v6 Trillium)
+($256\times256$, 700\,MHz, HBM2) for classic DNN inference workloads, and a
+TPU-v4-class proxy ($128\times128$, 940\,MHz, per-MXU HBM2 at
+${\sim}$307\,GB/s) for transformer decode workloads. TPU~v4 has four MXUs
+sharing ${\sim}$1228\,GB/s chip-level HBM2, so each MXU sees roughly one-quarter of the total bandwidth; we model this directly.
+
+Table~\ref{tab:workloads} lists the workload parameters for both studies.
+
+\begin{table}[t]
+\centering
+\caption{COCOSSim workload parameters. All workloads are batch-1 inference.}
+\label{tab:workloads}
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}llrl@{}}
+\toprule
+\textbf{Workload} & \textbf{Type} & \textbf{Layers} & \textbf{Key Dimensions} \\
+\midrule
+\multicolumn{4}{@{}l}{\emph{Classic DNN (TPU-v1/v6, $D{=}256$)}} \\
+AlexNet~\cite{krizhevsky2012}     & CNN  & 8  & 5 conv+3 FC ($9216{\times}4096$) \\
+VGG-16~\cite{simonyan2014vgg}     & CNN  & 16 & 13 conv+3 FC ($25088{\times}4096$) \\
+ResNet-50~\cite{he2016resnet}     & CNN  & 50 & smallest: $49{\times}4608{\times}512$ \\
+GNMT~\cite{wu2016gnmt}            & LSTM & 8  & $H{=}1024$; gates: $1{\times}1024{\times}4096$ \\
+PTB-Large~\cite{zaremba2014ptb}   & LSTM & 2  & $H{=}1500$; gates: $1{\times}1500{\times}6000$ \\
+DeepSpeech2~\cite{amodei2016deep} & RNN  & 10 & $H{=}800$, bidir; $1{\times}800{\times}800$ \\
+BERT-Base~\cite{devlin2019bert}   & Enc. & 12 & $d{=}768$, $h{=}12$, $d_{\text{ff}}{=}3072$ \\
+BERT-Large~\cite{devlin2019bert}  & Enc. & 24 & $d{=}1024$, $h{=}16$, $d_{\text{ff}}{=}4096$ \\
+\midrule
+\multicolumn{4}{@{}l}{\emph{LLM Decode (TPU-v4, $D{=}128$, ctx $L{=}64$--$4096$)}} \\
+SmolLM-135M  & LLM & 30 & $d{=}576$, $h{=}9$, $d_{\text{ff}}{=}1536$ \\
+SmolLM-360M  & LLM & 32 & $d{=}960$, $h{=}15$, $d_{\text{ff}}{=}2560$ \\
+Qwen2.5-0.5B & LLM & 24 & $d{=}896$, $h{=}14$, $d_{\text{ff}}{=}4864$ \\
+GPT-2 Small  & LLM & 12 & $d{=}768$, $h{=}12$, $d_{\text{ff}}{=}3072$ \\
+GPT-2 Medium & LLM & 24 & $d{=}1024$, $h{=}16$, $d_{\text{ff}}{=}4096$ \\
+LLaMA-7B     & LLM & 32 & $d{=}4096$, $h{=}32$, $d_{\text{ff}}{=}11008$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsubsection{$256{\times}256$ Scale: Classic Inference Workloads}
+
+Figure~\ref{fig:classic-workloads} evaluates batch-1 inference for six
+real-world models on the $256{\times}256$ proxy (matching TPU~v1 and
+TPU~v6 Trillium array dimensions) with realistic HBM2: three CNNs (AlexNet~\cite{krizhevsky2012},
+VGG-16~\cite{simonyan2014vgg}, ResNet-50~\cite{he2016resnet}), two
+LSTMs (GNMT~\cite{wu2016gnmt}, PTB-Large~\cite{zaremba2014ptb}), and
+one bidirectional RNN (DeepSpeech2~\cite{amodei2016deep}).
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{figures/tpuv6_combined.pdf}
+  \caption{$256{\times}256$ (TPU-v1/v6 scale) inference throughput improvement.
+  (a)~Classic DNN models vs.\ batch size.
+  (b)~BERT encoder models vs.\ sequence length (weights on-chip).}
+  \Description{Two-panel figure. Left: classic DNN throughput improvement
+  vs batch size. Right: BERT-Base and BERT-Large throughput improvement
+  vs sequence length.}
+  \label{fig:classic-workloads}
+\end{figure}
+
+DeepSpeech2 and ResNet-50 show the largest gains at 3.9\% and 3.6\%
+respectively. DeepSpeech2's bidirectional RNN layers produce
+$1{\times}800{\times}800$ GEMMs that map to roughly $3{\times}3$ tiles
+at $D{=}256$. ResNet-50's late bottleneck blocks operate at small spatial
+resolutions ($7{\times}7$, $14{\times}14$), producing lightly tiled GEMMs
+like $49{\times}4608{\times}512$ where the $D{-}1$ saving remains
+exposed. GNMT shows 1.1\%, where $1{\times}1024{\times}4096$ LSTM gate
+GEMMs tile moderately. AlexNet (0.5\%), VGG-16 (0.3\%), and PTB-Large
+(0.4\%) show smaller gains: AlexNet and VGG-16 are dominated by early
+conv layers with large spatial dimensions (up to $50176{\times}576$),
+while PTB-Large's $1{\times}1500{\times}6000$ gate GEMMs and
+$1{\times}1500{\times}10000$ output projection tile heavily at $D{=}256$.
+
+\subsubsection{$256{\times}256$ Scale: BERT Encoder Inference}
+
+Figure~\ref{fig:classic-workloads}(b) evaluates BERT-Base and
+BERT-Large~\cite{devlin2019bert} encoder inference on the same
+$256{\times}256$ proxy, now matched to TPU~v6 (Trillium) which returns
+to a $256{\times}256$ MXU. With 128\,MiB of on-chip SRAM and
+1638\,GB/s HBM bandwidth, per-layer weight loading fully overlaps with
+compute (${\sim}4$\,\textmu{}s load vs.\ ${\sim}40$--$60$\,\textmu{}s
+compute per layer), so the results reflect steady-state inference
+throughput with weights on-chip.
+
+BERT-Base reaches 5.3\% throughput improvement at short sequences
+($L{\leq}64$) and 5.0\% at $L{=}128$, the standard BERT input length.
+BERT-Large shows a consistent 3.1--3.3\% across $L{=}16$--$128$ because
+its larger hidden dimension ($d{=}1024$) produces
+$L{\times}1024{\times}1024$ projection GEMMs that tile more heavily at
+$D{=}256$. Both models drop at $L{=}512$ as the $L{\times}L$ attention
+GEMMs dominate. This makes BERT inference at typical classification and
+NER lengths (16--128 tokens) a strong deployment target for \pipette{}.
+
+\subsubsection{TPU-v4 Scale: Transformer Decode Workloads}
+
+Figure~\ref{fig:tpu-workload-speedup} shifts to the modern decode regime.
+We evaluate one-token decode blocks derived from six models---SmolLM-135M,
+SmolLM-360M, Qwen2.5-0.5B, GPT-2 Small, GPT-2 Medium, and
+LLaMA-7B---across context lengths 64 to 4096 on the $128\times128$ TPU-v4
+per-MXU proxy with realistic HBM2 bandwidth.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.85\linewidth]{figures/tpuv4_decode.pdf}
+  \caption{TPU-v4 per-MXU ($128\times128$, HBM2) decode cycle reduction vs.\ context length.}
+  \Description{Line plot showing TPU-v4 per-MXU decode cycle reduction
+  versus context length for six models from SmolLM-135M through LLaMA-7B.}
+  \label{fig:tpu-workload-speedup}
+\end{figure}
+
+Under per-MXU realistic HBM2 bandwidth, SmolLM-135M retains the largest
+per-layer cycle reduction, peaking at 2.2\% near context 1024 and declining
+toward 0.6\% at context 4096. GPT-2 Small shows a similar pattern,
+reaching 1.7\% at context 128 before declining as attention GEMMs add
+more tiles. SmolLM-360M stays near 0.7--1.4\%, GPT-2 Medium at 0.4--1.1\%,
+while LLaMA-7B remains near 0.06\% across all context lengths. Compared
+to the $256{\times}256$ classic results, the smaller $D{=}128$ array and the
+more bandwidth-constrained per-MXU memory both dilute the visible gain:
+the fixed $D{-}1{=}127$-cycle saving is half that of the $D{=}256$ case,
+and memory stalls consume a larger fraction of total execution time.
+Together, these results confirm a consistent TPU-scale conclusion:
+\pipette{} delivers its strongest workload-level benefit at larger array
+dimensions with classic inference workloads, while modern decode remains
+directionally positive for sub-1B models but rapidly collapses once
+transformer blocks become heavily tiled.
+
+
+
+
+
+
+\subsection{Evaluation Summary}
+
+Across all three evaluation levels, two factors consistently determine
+how much of the $D{-}1$ cycle saving \pipette{} delivers at the
+workload level: \emph{arithmetic precision} and \emph{tiling intensity}.
+
+\textbf{Where \pipette{} benefits most.}
+The strongest gains arise at low precision on moderate-frequency arrays
+with lightly tiled workloads. At the hardware level, INT4 and INT8 arrays
+at 500\,MHz show 10--13\% area reduction, 15--16\% power reduction, and
+up to +38\% combined energy--area efficiency improvement
+(Table~\ref{tab:hw}, Figure~\ref{fig:composite-pea}). At the workload
+level, models whose GEMM dimensions are comparable to $D$ expose the
+full per-GEMM saving: DeepSpeech2 (3.9\%) and ResNet-50 (3.6\%) on the
+$256{\times}256$ proxy, sub-1B LLM decode (2--4\%) on the
+$256{\times}256$ proxy, and Gemmini decode layers at $d_\text{model}
+\leq 2D$ (4--6\% speedup). The benefit is amplified when nonlinearities
+separate adjacent GEMMs (RNNs, LSTMs, multi-layer MLPs), preventing
+cross-GEMM tiling from amortizing the fixed saving.
+
+\textbf{Where \pipette{} has limited impact.}
+Three conditions erode the gain. First, heavy arithmetic: BF16 arrays
+show under 2\% energy reduction because the MAC macro dominates PE area
+and the removed skew registers are a negligible fraction. Second, heavy
+tiling: LLaMA-7B ($d{=}4096$) produces thousands of tiles per layer,
+reducing the per-layer saving to 0.06--0.2\% regardless of array size.
+Third, large spatial convolutions: AlexNet (0.5\%) and VGG-16 (0.3\%)
+are dominated by early conv layers with im2col GEMMs spanning tens of
+thousands of rows, creating deep tile queues that amortize the fixed
+$D{-}1$ saving almost entirely.
+
+In summary, \pipette{} is a drop-in topology improvement that
+simultaneously reduces area (up to 13\%), power (up to 16\%), and
+execution cycles (up to 6\% per layer), compounding to a +38\% combined
+energy--area efficiency gain on INT8 arrays. These returns are largest on
+low-precision, edge-scale systolic arrays running lightly tiled
+workloads---the regime where boundary skew hardware is still a
+meaningful fraction of total array cost and execution time.

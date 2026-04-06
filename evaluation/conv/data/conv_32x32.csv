@@ -1,0 +1,7 @@
+config,test,DIM,general_cycles,cold_cycles,warm_cycles,cold_start
+baseline,lenet5_fc_spad,32,67453,9034,7745,9034
+twist,lenet5_fc_spad,32,66746,8522,7233,8522
+baseline,mobilenet_v1_spad,32,199306,101849,101849,101849
+twist,mobilenet_v1_spad,32,198862,101358,101358,101358
+baseline,roshambo_full_spad,32,121366,14112,5253,14112
+twist,roshambo_full_spad,32,121129,13952,5093,13952

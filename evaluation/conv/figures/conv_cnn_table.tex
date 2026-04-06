@@ -1,0 +1,26 @@
+\begin{table*}[t]
+\centering
+\caption{Speedup of \pipette{} over Baseline on convolution and multi-layer CNN workloads.}
+\label{tab:conv_cnn_results}
+\small
+\begin{table}[t]
+\centering
+\caption{Speedup of \pipette{} over Baseline on convolution and multi-layer CNN workloads.}
+\label{tab:conv_cnn_results}
+\setlength{\tabcolsep}{1pt}
+\renewcommand{\arraystretch}{1}
+\begin{tabular}{@{} l l r @{}}
+\toprule
+\textbf{Workload} & \textbf{Shape} & \shortstack{Speedup} \\
+\midrule
+\multicolumn{3}{@{}l}{\emph{$D{=}32$}} \\
+LeNet-5~\cite{lecun_gradient-based_1998} & FC $120{\to}84{\to}10$, 8 passes & 7.08\% \\
+RoshamboNet~\cite{aimar_nullhop_2019} & 5 conv layers, $1{\to}16{\to} \cdots {\to}128$ & 3.14\% \\
+MobileNetV1~\cite{howard_mobilenets_nodate} & 7 pointwise $1{\times}1$ layers, $32{\to}512$ & 0.48\% \\
+\midrule
+\multicolumn{3}{@{}l}{\emph{$D{=}64$}} \\
+ResNet Bottleneck~\cite{he2016resnet} & 8 blocks, $128{\to}32{\to}128$ & 10.21\% \\
+RoshamboNet L5~\cite{aimar_nullhop_2019} & $1{\times}1$ conv, $128{\to}128$, 16 iters & 9.96\% \\
+\bottomrule
+\end{tabular}
+\end{table}

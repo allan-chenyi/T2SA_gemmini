@@ -342,7 +342,8 @@ object GemminiConfigs {
     tileRows = 1, tileColumns = 1,
     meshRows = 64, meshColumns = 64,
     dataflow = Dataflow.WS,
-    sp_capacity = CapacityInKilobytes(1024),
+    sp_capacity = CapacityInKilobytes(4096),
+    sp_banks = 16,
     acc_capacity = CapacityInKilobytes(256),
     dma_buswidth = 512
   ))

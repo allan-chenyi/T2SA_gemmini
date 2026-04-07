@@ -1,5 +1,0 @@
-config,test,DIM,general_cycles,cold_cycles,warm_cycles,cold_start
-baseline,resnet_bottleneck_spad,64,86479,23700,11052,23700
-twist,resnet_bottleneck_spad,64,85304,22676,10028,22676
-baseline,roshambo_l5_spad,64,61531,12153,11309,12153
-twist,roshambo_l5_spad,64,60591,11129,10285,11129

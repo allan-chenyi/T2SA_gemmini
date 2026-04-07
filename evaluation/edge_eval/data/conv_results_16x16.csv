@@ -1,9 +1,0 @@
-config,test,bench_name,general_cycles,cold_cycles,warm_cycles,DIM,BATCH_SIZE,IN_DIM,IN_CHANNELS,OUT_CHANNELS,CHANNELS,KERNEL_DIM,PADDING,STRIDE,HIDDEN,INPUT_SIZE,BATCH
-baseline,bilstm_spad,bilstm_spad,97516,64382,61557,16,,,,,,,,,,,
-twist,bilstm_spad,bilstm_spad,96181,62909,60084,16,,,,,,,,,,,
-baseline,dlrm_mlp_spad,dlrm_mlp_spad,53398,23894,23894,16,,,,,,,,,,,
-twist,dlrm_mlp_spad,dlrm_mlp_spad,53379,23899,23899,16,,,,,,,,,,,
-baseline,kws_lstm_spad,kws_lstm_spad,52496,27063,26118,16,,,,,,,,,,,
-twist,kws_lstm_spad,kws_lstm_spad,49916,24503,23558,16,,,,,,,,,,,
-baseline,lstm_lm_spad,lstm_lm_spad,84262,58610,56694,16,,,,,,,,,,,
-twist,lstm_lm_spad,lstm_lm_spad,81684,56050,54134,16,,,,,,,,,,,
